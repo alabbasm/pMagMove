@@ -34,7 +34,7 @@ spec_swimmer = [
     ('C_star', float64),
     ('regions_state',float64),
     ('bound_state',float64),
-    ('strategy', int8), # 0 = run-tumble, 1 = run-reverse, 2 = run-tumble-reverse,
+    ('strategy', boolean),
     ('prev_state', int8)
 ]
 
@@ -427,24 +427,10 @@ class Swimmer:
         # Include translational diffusion and external force in BOTH states
         # self-propulsion drift only during run (status==1)
         # reverse direction during reverse (status==2)
-
-        if self.strategy == 1:
-            if self.status == 2:
-                drift = - (self.v_self * self.orientation * self.dt)
-            elif self.status == 1:
-                drift = (self.v_self * self.orientation * self.dt)
-            else:
-                drift = np.zeros(3, dtype=np.float64)
+        if self.status != 0:
+             drift = (self.v_self * self.orientation * self.dt)
         else:
-            if self.status == 1:
-                drift = (self.v_self * self.orientation * self.dt)
-            else:
-                drift = np.zeros(3, dtype=np.float64)
-
-        #if self.status != 0:
-        #     drift = (self.v_self * self.orientation * self.dt)
-        #else:
-        #    drift = np.zeros(3, dtype=np.float64)
+            drift = np.zeros(3, dtype=np.float64)
         
         force_drift = (self.F_ext / self.gamma_t) * self.dt
         diffusion = np.sqrt(2 * kB * self.T / self.gamma_t) * dW_t
@@ -508,13 +494,8 @@ class Swimmer:
         # 2) orientation update
         torque = np.cross(self.M_mag * self.orientation, self.B)
         drift_rot = (torque / self.gamma_r) * self.dt
-        
-        if self.strategy == 1:
-            Tn = self.T
-        else:
-            Tn = self.Teff if self.status == 0 else self.T
-        
-        #Tn = self.Teff if self.status == 0 else self.T
+
+        Tn = self.Teff if self.status == 0 else self.T
         noise_rot = np.sqrt(2 * kB * Tn / self.gamma_r) * dW_r
         Phi = drift_rot + noise_rot
 
@@ -542,13 +523,13 @@ class Swimmer:
 
             elif self.time_in_state >= self.next_interval and self.prev_state == 1:
                 self.status = 2  # enter REVERSE
-                #self.orientation = -self.orientation  # reverse direction
+                self.orientation = -self.orientation  # reverse direction
                 self.time_in_state = 0.0
                 self.next_interval = self._draw_interval(grad_C, conc_here)
                 
             elif self.time_in_state >= self.next_interval and self.prev_state == 2:
                 self.status = 1  # enter RUN
-                #self.orientation = -self.orientation  # reverse direction
+                self.orientation = -self.orientation  # reverse direction
                 self.time_in_state = 0.0
                 self.next_interval = self._draw_interval(grad_C, conc_here)
         

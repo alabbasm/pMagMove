@@ -145,7 +145,7 @@ if __name__ == "__main__":
     gamma_r = 6.8e-20
     T = 305.0           # K
     Teff = 4.2e4        # K
-    M_mag = 6e-6         # A·m
+    M_mag = 6e-16         # A·m
 
     # strategy
     strategy = 1       # 0: run-tumble, 1: run-reverse
@@ -187,9 +187,9 @@ if __name__ == "__main__":
     kmin2, kmax2 = 20, 40
 
     kappa_1, kappa_2 = 2e-5, 2e-5
-    C_sink_1, C_sink_2 = 15, 5
-    binding_rate_1, binding_rate_2 = 8, 0.8
-    unbinding_rate_1, unbinding_rate_2 = 0.3, 0.3
+    C_sink_1, C_sink_2 = 5, 15
+    binding_rate_1, binding_rate_2 = 0, 0
+    unbinding_rate_1, unbinding_rate_2 = 0, 0
 
     # create swimmers
     swimmers = List.empty_list(Swimmer.class_type.instance_type)
@@ -222,9 +222,9 @@ if __name__ == "__main__":
     positions_hist, C_hist, orientation_hist, t_out = \
             run_brownian_swarm_numba_wchemo_storeC_strided(swimmers, dt, final_time, env,save_stride)
     # save the concentration history
-    np.save("chist_rev_nobinding_neg_binding_n1000t1000_155.npy", C_hist)
-    np.save("pos_rev_nobinding_neg_binding_n1000t1000_155.npy", positions_hist)
-    #np.save("ori_test_rev.npy", orientation_hist)
+    np.save("n1000_t1000_chist_rev_nobind515_mag0.npy", C_hist)
+    np.save("n1000_t1000_pos_rev_nobind515_mag0.npy", positions_hist)
+    #np.save("ori_test2_rev.npy", orientation_hist)
 
     print(f"Simulated {n_swimmers} swimmers for {final_time} s.")
     print(f"strided snapshots: {save_stride}, total: {t_out}")
