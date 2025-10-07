@@ -1,9 +1,16 @@
+"""Core simulation types for magnetoaerotactic swimmers and environment.
+
+This module defines the numba-jitted `Environment` PDE solver and the
+`Swimmer` agent dynamics. Helper functions for regions and analysis live in
+`helper.py`.
+"""
+
 import numpy as np
 from numba.experimental import jitclass
 from numba import njit
 from numba.types import float64, int8, int64, boolean
 from numba.typed import List
-from helper import *
+from helper import add_box_region, build_face_counts
 
 kB = 1.380649e-23  # J/K
 
@@ -34,7 +41,7 @@ spec_swimmer = [
     ('C_star', float64),
     ('regions_state',float64),
     ('bound_state',float64),
-    ('strategy', boolean),
+    ('strategy', int8), # 0 = run-tumble, 1 = run-reverse, 2 = run-tumble-reverse,
     ('prev_state', int8)
 ]
 
@@ -107,8 +114,6 @@ class Environment:
         self.kappa_2 = kappa_2
         self.C_sink_1 = C_sink_1
         self.C_sink_2 = C_sink_2
-        self.binding_rate_1 = binding_rate_1
-        self.binding_rate_2 = binding_rate_2
         self.unbinding_rate_1 = unbinding_rate_1
         self.unbinding_rate_2 = unbinding_rate_2
         self.C_star = C_star
@@ -118,7 +123,13 @@ class Environment:
         self.nfaces1 = build_face_counts(self.region_id_1, 1)
         self.nfaces2 = build_face_counts(self.region_id_2, 2)
         self.Ca = Ca
+
     def oxygen_step_ftcs_3d_with_robin_dirichlet_interior(self, C, rho):
+        """Advance oxygen field by one explicit FTCS step with mixed BCs.
+
+        Applies Dirichlet within sink volumes and Robin penalties on faces
+        adjacent to sinks. Air-water interface at z- is Dirichlet to Cb.
+        """
         Ny, Nx, Nz = self.N_y, self.N_x, self.N_z
         hx = self.box_size[0] / Nx
         hy = self.box_size[1] / Ny
@@ -251,7 +262,7 @@ class Environment:
         C[:, :, :] = Cnew
 
     def get_del_C(self, C):
-        # Return gradient field with shape (Ny, Nx, Nz, 3)
+        """Return gradient field ∇C with shape (Ny, Nx, Nz, 3)."""
         del_C = np.zeros((self.N_y, self.N_x, self.N_z, 3), dtype=np.float64)
 
         # physical voxel sizes and inverse
@@ -289,7 +300,7 @@ class Environment:
 # jitted swimmer class
 @jitclass(spec_swimmer)
 class Swimmer:
-    """Swimmer class for magnetoaerotactic Brownian swimmers"""
+    """Swimmer class for magnetoaerotactic Brownian swimmers."""
 
     def __init__(
         self, v_self, gamma_t, gamma_r, T, Teff, dt,
@@ -372,10 +383,9 @@ class Swimmer:
         norm = np.sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2])
         return v / norm
 
-    def _draw_interval(self, grad_C, conc_here):
-        # Draw an exponential interval for the UPCOMING state based on chemotaxis mode
+    def _draw_interval(self, grad_C, conc_here,scalar):
+        """Draw next state's exponential interval based on chemotaxis mode."""
         t1_0 = self.mean_run
-        scalar = self.orientation[0] * grad_C[0] + self.orientation[1] * grad_C[1] + self.orientation[2] * grad_C[2]
         mode = self.kindofchemotaxis
         if mode == 0:
             # chemoattractant
@@ -399,6 +409,7 @@ class Swimmer:
         return np.random.exponential(tau)
 
     def step(self, grad_C, conc_here):
+        """Advance swimmer state by one time step."""
         # Wiener increments
         sqrt_dt = np.sqrt(self.dt)
         dW_t = np.array(
@@ -427,10 +438,24 @@ class Swimmer:
         # Include translational diffusion and external force in BOTH states
         # self-propulsion drift only during run (status==1)
         # reverse direction during reverse (status==2)
-        if self.status != 0:
-             drift = (self.v_self * self.orientation * self.dt)
+
+        if self.strategy == 1:
+            if self.status == 2:
+                drift = - (self.v_self * self.orientation * self.dt)
+            elif self.status == 1:
+                drift = (self.v_self * self.orientation * self.dt)
+            else:
+                drift = np.zeros(3, dtype=np.float64)
         else:
-            drift = np.zeros(3, dtype=np.float64)
+            if self.status == 1:
+                drift = (self.v_self * self.orientation * self.dt)
+            else:
+                drift = np.zeros(3, dtype=np.float64)
+
+        #if self.status != 0:
+        #     drift = (self.v_self * self.orientation * self.dt)
+        #else:
+        #    drift = np.zeros(3, dtype=np.float64)
         
         force_drift = (self.F_ext / self.gamma_t) * self.dt
         diffusion = np.sqrt(2 * kB * self.T / self.gamma_t) * dW_t
@@ -495,7 +520,12 @@ class Swimmer:
         torque = np.cross(self.M_mag * self.orientation, self.B)
         drift_rot = (torque / self.gamma_r) * self.dt
 
-        Tn = self.Teff if self.status == 0 else self.T
+        if self.strategy == 1:
+            Tn = self.T
+        else:
+            Tn = self.Teff if self.status == 0 else self.T
+        
+        #Tn = self.Teff if self.status == 0 else self.T
         noise_rot = np.sqrt(2 * kB * Tn / self.gamma_r) * dW_r
         Phi = drift_rot + noise_rot
 
@@ -523,15 +553,17 @@ class Swimmer:
 
             elif self.time_in_state >= self.next_interval and self.prev_state == 1:
                 self.status = 2  # enter REVERSE
-                self.orientation = -self.orientation  # reverse direction
+                #self.orientation = -self.orientation  # reverse direction
                 self.time_in_state = 0.0
-                self.next_interval = self._draw_interval(grad_C, conc_here)
+                scalar = -(self.orientation[0] * grad_C[0] + self.orientation[1] * grad_C[1] + self.orientation[2] * grad_C[2])
+                self.next_interval = self._draw_interval(grad_C, conc_here,scalar)
                 
             elif self.time_in_state >= self.next_interval and self.prev_state == 2:
                 self.status = 1  # enter RUN
-                self.orientation = -self.orientation  # reverse direction
+                #self.orientation = -self.orientation  # reverse direction
                 self.time_in_state = 0.0
-                self.next_interval = self._draw_interval(grad_C, conc_here)
+                scalar = (self.orientation[0] * grad_C[0] + self.orientation[1] * grad_C[1] + self.orientation[2] * grad_C[2])
+                self.next_interval = self._draw_interval(grad_C, conc_here,scalar)
         
         # run-tumble strategy
         else:
@@ -541,7 +573,8 @@ class Swimmer:
                 self.time_in_state = 0.0
                 if self.status == 1:
                     # entering RUN: draw based on chemotaxis rules
-                    self.next_interval = self._draw_interval(grad_C, conc_here)
+                    scalar = (self.orientation[0] * grad_C[0] + self.orientation[1] * grad_C[1] + self.orientation[2] * grad_C[2])
+                    self.next_interval = self._draw_interval(grad_C, conc_here,scalar)
                 else:
                     # entering TUMBLE: draw from mean_tumble
                     self.next_interval = np.random.exponential(self.mean_tumble)

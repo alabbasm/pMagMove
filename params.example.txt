@@ -1,0 +1,82 @@
+# Example parameters for pMagMove simulation
+# Lines are key=value, comments start with '#'
+
+# Core simulation
+n_swimmers=1000
+final_time=1000.0
+save_stride=100
+out_prefix=run1
+out_dir=./data_out
+
+# Time step
+dt=0.002
+
+# Swimmer physics
+v_self=1.42e-05
+gamma_t=5.1e-08
+gamma_r=6.8e-20
+T=305.0
+Teff=42000.0
+M_mag=6e-16
+
+# Strategy and states
+strategy=1           # 0=run-tumble, 1=run-reverse
+state=1              # initial state (1=run)
+prev_state=1
+
+# Run/tumble stats
+mean_run=1.0
+mean_tumble=0.14
+
+# Chemotaxis
+kindofchemotaxis=0   # 0=band, else off
+C_star=10.0
+grad_ref=2500000.0
+
+# Magnetic field and external force (comma-separated vectors)
+B=-35.36,-35.36,0.0
+F_ext=0.0,0.0,0.0
+
+# Box size (meters)
+box_size=0.002,0.0006,0.002
+
+# Randomization flags
+rand_pos_flag=true
+rand_ori_flag=true
+
+# Environment (oxygen)
+diffusion_coeff=2.1e-09
+consumption_rate=8.33e-14
+initial_conc=70.0
+N_x=100
+N_y=30
+N_z=100
+
+# Sink boxes (indices are half-open [min,max))
+imin1=20
+imax1=40
+jmin1=0
+jmax1=30
+kmin1=20
+kmax1=40
+
+imin2=60
+imax2=80
+jmin2=0
+jmax2=30
+kmin2=20
+kmax2=40
+
+# Robin/Dirichlet parameters
+kappa_1=2e-05
+kappa_2=2e-05
+C_sink_1=5.0
+C_sink_2=15.0
+binding_rate_1=8.0
+binding_rate_2=0.8
+unbinding_rate_1=0.3
+unbinding_rate_2=0.3
+
+# Boundary parameters
+Cb=70.0
+Ca=10.0
